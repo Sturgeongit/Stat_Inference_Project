@@ -1,0 +1,167 @@
+---
+title: "Final Project:   Presence of Blood Creatinine Phosphokinase In Anaemia Patients "
+author: "Group 1: Thanh La, Alison Bradburn, Obed Contreras, Alfonso Haro"
+date: "11/13/2021"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(ggplot2)
+```
+
+# I. Introduction 
+
+Creatinine phosphokinase or creatinine kinase (know as CPK or CK) is a waste product found in people's blood and urine. Measuring CPK in the blood can help detect whether our kidneys are working correctly. In ordinary people, the kidneys are able to filter and remove this waste from the body. So it can be said that the amount of CPK in the blood should be low, and the amount of CPK in the urine should be high. 
+
+Elevated blood CPK levels can signal such causes as impaired kidney function, heart failure, dehydration, injury, or a muscle disorder.
+
+In this project, we will focus on analyzing whether anemia leads to increased CPK in the blood.
+
+# II. Data Exploration
+
+This dataset was collected and updated by Davide Chicco (Krembil Research Institute, Toronto, Canada) and donated to the University of California, Irvine Machine Learning Repository.
+
+**Dataset Source: ** http://archive.ics.uci.edu/ml/datasets/Heart+failure+clinical+records#:~:text=Heart%20failure%20clinical%20records%20Data%20Set%20Download%3A%20Data,where%20each%20patient%20profile%20has%2013%20clinical%20features.
+
+```{r,echo = F}
+options(readr.show_col_types = FALSE)
+
+data = read_csv("heart_failure_clinical_records_dataset.csv")
+data = na.omit(data)
+summary(data)
+head(data)
+```
+
+# III. Confidence Interval for Mean of CPK present in anaemia/non-anaemia patient
+
+In this section, we will use the bootstrap percentile method to construct a 95% confidence interval for the true mean of difference between anaemia and non-anaemia patients.
+
+```{r,echo=F, fig.width=8, fig.height=4}
+anaemia = data[data$anaemia == 1,]$creatinine_phosphokinase
+noanaemia = data[data$anaemia == 0,]$creatinine_phosphokinase
+
+anaemia_data = data %>%filter(anaemia == 1) %>% select(creatinine_phosphokinase)
+noanaemia_data = data %>% filter(anaemia == 0) %>% select(creatinine_phosphokinase)
+
+old.par = par(mfrow =c(1,2)) 
+hist(anaemia, main = "CPK Content\nAnaemia Patient", xlab = "CPK content(mcg/L)")
+hist(noanaemia, main = "CPK Content\nNon-Anaemia Patient ", xlab = "CPK content(mcg/L)")
+par(old.par)
+```
+
+```{r, echo = F, fig.width=10, fig.height=4}
+old.par = par(mfrow =c(1,2)) 
+qqnorm(anaemia, main ="CPK Content\nAnaemia Patient", col = "orange" )
+qqline(anaemia)
+qqnorm(noanaemia, main ="CPK Content\nNon-Anaemia Patient", col = "orange")
+qqline(noanaemia)
+par(old.par)
+```
+After careful analysis, we conclude with 95% confidence that the true mean of difference between patients or without anaemia is within the interval (2.334569 -1.735696).
+
+The confidence interval for the statistic is highlighted in orange on the respective qqnorm plot and the observed statistic is represented by the red lines. Given the confidence intervals, we are interested in comparing the difference when patients are whether anaemia or no-anaemia
+
+```{r,echo=F, fig.width=13, fig.height=4}
+# Mean of creatinine_phosphokinase of anaemia event - noanaemia event
+Thetahat = mean(anaemia) - mean(noanaemia)
+nx = length(anaemia)
+ny = length(noanaemia)
+se = sqrt(var(anaemia)/nx + var(noanaemia)/ny)
+
+N = 10^5
+Tstar = numeric(N)
+diff_CPK = numeric(N)
+for(i in 1:N){
+  bootx = sample(anaemia, nx, replace = T)
+  booty = sample(noanaemia, ny, replace = T)
+  Tstar[i] = (mean(bootx) - mean(booty) - Thetahat) /
+               sqrt(var(bootx)/nx + var(booty)/ny)
+  diff_CPK[i] = mean(bootx) - mean(booty)
+}
+
+old.par = par(mfrow =c(1,2)) 
+
+qqnorm(diff_CPK, main ="Quantile Difference\nCPK content present in patient", col = "orange" )
+qqline(diff_CPK)
+
+hist(diff_CPK, main = "Bootstrap Distribution of Difference\nCPK content average ", xlab = "Difference in Average")
+abline(v = Thetahat, col = "red", lty = 2)
+par(old.par)
+
+```
+
+```{r, echo=F}
+print("Bootstrap of 95% Confidence Interval of Difference in CPK average ")
+quantile(Tstar, c(0.975, 0.025))  #97.5%:-608.5928      2.5%: -198.3756
+
+```
+
+# IV. Hypothesis Testing 
+
+By using Chi Square test (know as the test of independence), we are going to determine whether Anaemia and CPK variables are dependent or independent.
+
+With $\alpha = 0.05$, the resulting p-value of 0.26 indicates that we should reject the null hypothesis. Since the null hypothesis is that the variables are independent, our conclusion is that they are likely dependent. 
+
+To confirm our result, we will perform a permutation hypothesis test. It is effectively a form of resampling with a null hypotheses that one variable has zero effect of the outcome. This will assure us that our previous result of 0.26 was not due to chance in the sample.
+
+```{r}
+tbl = table(data$anaemia, data$creatinine_phosphokinase)
+chisq.test(tbl)
+```
+
+H_0:  True mean for the level of CPK in the blood is the same whether patients have anaemia or not
+
+H_a:  True mean for the level of CPK in the blood of an anaemia patient is higher than in a patient without anaemia
+
+Significance level = 5% is the highest probability we allow for a type I error.
+
+```{r, echo = F}
+#TESTING EQUALITY OF VARIANCES
+library(testequavar)
+equa2vartest(anaemia, noanaemia, 0.05, B=500)
+observedT = t.test(anaemia,noanaemia, alt = "two.sided",var.equal = TRUE)
+observedT
+
+hist(Tstar, main = "Bootstrap the Permutation Difference of CPK's average", xlab = "Permutation of Differences")
+abline(v = observedT$statistic, col = "blue", lty = 5)
+```
+
+From the permutation test, we have a p-value of 0.00091686. We can see clearly that the probability for getting the observed statistics due to chance is very small. Therefore, at a confidence level of 95%, we reject the null hypothesis and conclude that in fact the level of CPK in the blood of anaemia patient is higher than in patients without anaemia.
+
+# V. Regression
+
+
+
+```{r,echo = F}
+workfile_lm <- lm(anaemia ~ creatinine_phosphokinase, data = data)
+summary(workfile_lm)
+
+old.par = par(mfrow =c(1,2)) 
+#Diagnostics:Independence of Residuals? constant variance?
+
+plot(workfile_lm$fit, rstudent(workfile_lm), xlab = "Fit", ylab = "Residuals")
+abline(h = 0)
+lines(smooth.spline(workfile_lm$fit, rstudent(workfile_lm), df = 3), col = "blue")
+
+#Diagnostics: Normality of residuals?
+qqnorm(rstudent(workfile_lm))
+qqline(rstudent(workfile_lm))
+
+par(old.par)
+```
+
+# Conclusion
+
+As the above graph of the residuals show, there is a distinct correlation between the level of CPK in the blood of patients. 
+
+Therefore, at a confidence level of 95%, there is sufficient evidence that we can reject the null hypothesis that there is no correlation between anaemia and blood CPK levels. We instead conclude that there is sufficient evidence to support the claim that the level of CPK in the blood of anaemia patient is higher than in patients without anaemia.
+
+# Reference
+**Davide Chicco, Giuseppe Jurman: "Machine learning can predict survival of patients with heart failure from serum creatinine and ejection fraction alone". BMC Medical Informatics and Decision Making 20, 16 (2020).**
